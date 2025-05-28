@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import tempfile
 import shutil
 import logging
+import gc  # Add garbage collection
 
 load_dotenv()
 
@@ -95,7 +96,7 @@ class LastFMWallpaperGenerator:
             return []
     
     def download_image(self, url):
-        """Download image from URL with better quality handling"""
+        """Download image from URL with better quality handling and memory optimization"""
         try:
             # Try to get higher resolution by modifying the URL
             high_res_url = url.replace('/300x300/', '/500x500/').replace('300x300', '500x500')
@@ -105,16 +106,36 @@ class LastFMWallpaperGenerator:
             
             # Try high resolution first
             try:
-                response = requests.get(high_res_url, timeout=10)
+                response = requests.get(high_res_url, timeout=15, stream=True)
                 response.raise_for_status()
-                image = Image.open(io.BytesIO(response.content))
+                
+                # Load image directly from stream to save memory
+                image_data = io.BytesIO()
+                for chunk in response.iter_content(chunk_size=8192):
+                    image_data.write(chunk)
+                image_data.seek(0)
+                
+                image = Image.open(image_data)
+                # Convert to RGB immediately to avoid issues later
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                    
                 logger.info(f"Downloaded high-res image: {image.size}")
                 return image
             except:
                 # Fall back to original URL
-                response = requests.get(url, timeout=10)
+                response = requests.get(url, timeout=15, stream=True)
                 response.raise_for_status()
-                image = Image.open(io.BytesIO(response.content))
+                
+                image_data = io.BytesIO()
+                for chunk in response.iter_content(chunk_size=8192):
+                    image_data.write(chunk)
+                image_data.seek(0)
+                
+                image = Image.open(image_data)
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                    
                 logger.info(f"Downloaded standard image: {image.size}")
                 return image
                 
@@ -127,41 +148,48 @@ class LastFMWallpaperGenerator:
         if not album_cover:
             return None
         
-        # Convert to RGB if needed
-        if album_cover.mode != 'RGB':
-            album_cover = album_cover.convert('RGB')
-        
-        wallpaper_width, wallpaper_height = wallpaper_size
-        cover_width, cover_height = album_cover.size
-        
-        # Create a new wallpaper canvas with black background
-        wallpaper = Image.new('RGB', wallpaper_size, color=(0, 0, 0))
-        
-        # If the album cover is larger than wallpaper dimensions, resize it to fit
-        # while maintaining aspect ratio
-        if cover_width > wallpaper_width or cover_height > wallpaper_height:
-            # Calculate the scaling factor to fit within wallpaper bounds
-            scale_factor = min(wallpaper_width / cover_width, wallpaper_height / cover_height)
-            new_width = int(cover_width * scale_factor)
-            new_height = int(cover_height * scale_factor)
+        try:
+            wallpaper_width, wallpaper_height = wallpaper_size
+            cover_width, cover_height = album_cover.size
             
-            # Resize with high-quality resampling
-            album_cover = album_cover.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            cover_width, cover_height = new_width, new_height
-        
-        # Calculate position to center the album cover on the wallpaper
-        x_offset = (wallpaper_width - cover_width) // 2
-        y_offset = (wallpaper_height - cover_height) // 2
-        
-        # Paste the album cover onto the center of the wallpaper
-        wallpaper.paste(album_cover, (x_offset, y_offset))
-        
-        return wallpaper
+            # Create a new wallpaper canvas with black background
+            wallpaper = Image.new('RGB', wallpaper_size, color=(0, 0, 0))
+            
+            # If the album cover is larger than wallpaper dimensions, resize it to fit
+            # while maintaining aspect ratio
+            if cover_width > wallpaper_width or cover_height > wallpaper_height:
+                # Calculate the scaling factor to fit within wallpaper bounds
+                scale_factor = min(wallpaper_width / cover_width, wallpaper_height / cover_height)
+                new_width = int(cover_width * scale_factor)
+                new_height = int(cover_height * scale_factor)
+                
+                # Resize with high-quality resampling
+                album_cover = album_cover.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                cover_width, cover_height = new_width, new_height
+            
+            # Calculate position to center the album cover on the wallpaper
+            x_offset = (wallpaper_width - cover_width) // 2
+            y_offset = (wallpaper_height - cover_height) // 2
+            
+            # Paste the album cover onto the center of the wallpaper
+            wallpaper.paste(album_cover, (x_offset, y_offset))
+            
+            return wallpaper
+            
+        except Exception as e:
+            logger.error(f"Error creating wallpaper for {artist_name} - {album_name}: {e}")
+            return None
     
-    def generate_wallpapers(self, username, period="overall", limit=10):
-        """Generate wallpapers for user's top albums"""
+    def generate_wallpapers_to_disk(self, username, period="overall", limit=10, temp_dir=None):
+        """Generate wallpapers for user's top albums and save directly to disk to optimize memory"""
         albums = self.get_user_top_albums(username, period, limit)
-        wallpapers = []
+        if not albums:
+            return []
+            
+        if not temp_dir:
+            temp_dir = tempfile.mkdtemp()
+            
+        saved_files = []
         
         for i, album in enumerate(albums):
             try:
@@ -195,16 +223,27 @@ class LastFMWallpaperGenerator:
                 # Create wallpaper
                 wallpaper = self.create_wallpaper(album_cover, album_name, artist_name)
                 if wallpaper:
-                    wallpapers.append({
-                        'image': wallpaper,
-                        'filename': f"{artist_name} - {album_name}".replace('/', '_').replace('\\', '_')[:100] + '.jpg'
+                    # Save immediately to disk and free memory
+                    filename = f"{artist_name} - {album_name}".replace('/', '_').replace('\\', '_')[:100] + '.jpg'
+                    filepath = os.path.join(temp_dir, filename)
+                    
+                    # Save with optimized settings
+                    wallpaper.save(filepath, 'JPEG', quality=85, optimize=True)
+                    saved_files.append({
+                        'filename': filename,
+                        'filepath': filepath
                     })
+                    
+                    # Explicitly delete objects and force garbage collection
+                    del wallpaper
+                    del album_cover
+                    gc.collect()
                     
             except Exception as e:
                 logger.error(f"Error processing album {album.get('name', 'Unknown')}: {e}")
                 continue
         
-        return wallpapers
+        return saved_files, temp_dir
 
 # Initialize the generator
 lastfm_generator = None
@@ -242,6 +281,11 @@ def generate_wallpapers():
     if not username:
         return jsonify({'error': 'Username is required'}), 400
     
+    # Limit the maximum number of wallpapers to prevent memory issues
+    if limit > 50:
+        limit = 50
+        logger.warning(f"Limiting wallpaper generation to 50 albums for memory optimization")
+    
     try:
         lastfm_generator = LastFMWallpaperGenerator()
         
@@ -250,48 +294,102 @@ def generate_wallpapers():
         if not is_valid:
             return jsonify({'error': validation_message}), 400
         
-        wallpapers = lastfm_generator.generate_wallpapers(username, period, limit)
+        # Force garbage collection before starting
+        gc.collect()
         
-        if not wallpapers:
+        saved_files, temp_dir = lastfm_generator.generate_wallpapers_to_disk(username, period, limit)
+        
+        if not saved_files:
             return jsonify({'error': 'No wallpapers could be generated. The user might not have enough album data.'}), 400
         
-        # Create a temporary directory to store wallpapers
-        temp_dir = tempfile.mkdtemp()
-        
-        # Save wallpapers to temporary directory
-        for wallpaper_data in wallpapers:
-            filepath = os.path.join(temp_dir, wallpaper_data['filename'])
-            wallpaper_data['image'].save(filepath, 'JPEG', quality=100, optimize=True)
-        
-        # Create zip file
+        # Create zip file with compression
         zip_path = os.path.join(temp_dir, f"{username}_wallpapers.zip")
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
-            for wallpaper_data in wallpapers:
-                filepath = os.path.join(temp_dir, wallpaper_data['filename'])
-                zipf.write(filepath, wallpaper_data['filename'])
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zipf:
+            for saved_file in saved_files:
+                zipf.write(saved_file['filepath'], saved_file['filename'])
+                # Remove individual files after adding to zip to save space
+                try:
+                    os.remove(saved_file['filepath'])
+                except:
+                    pass
+        
+        # Force garbage collection after processing
+        gc.collect()
         
         return jsonify({
             'success': True,
-            'count': len(wallpapers),
+            'count': len(saved_files),
             'download_url': f'/download/{username}',
             'validation_message': validation_message
         })
         
     except Exception as e:
+        logger.error(f"Error generating wallpapers: {str(e)}")
+        # Clean up any temporary files on error
+        try:
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+        except:
+            pass
+        gc.collect()
         return jsonify({'error': f'Error generating wallpapers: {str(e)}'}), 500
+
+def cleanup_old_temp_files():
+    """Clean up old temporary files to prevent disk space issues"""
+    try:
+        import time
+        current_time = time.time()
+        temp_base = tempfile.gettempdir()
+        
+        for item in os.listdir(temp_base):
+            if item.startswith('tmp'):
+                item_path = os.path.join(temp_base, item)
+                if os.path.isdir(item_path):
+                    # Remove directories older than 1 hour
+                    if current_time - os.path.getctime(item_path) > 3600:
+                        try:
+                            shutil.rmtree(item_path)
+                            logger.info(f"Cleaned up old temp directory: {item_path}")
+                        except:
+                            pass
+    except Exception as e:
+        logger.error(f"Error cleaning up temp files: {e}")
 
 @app.route('/download/<username>')
 def download_wallpapers(username):
     try:
+        # Clean up old files first
+        cleanup_old_temp_files()
+        
         # Find the zip file in temp directory
         temp_dirs = [d for d in os.listdir('/tmp') if d.startswith('tmp')]
         for temp_dir in temp_dirs:
             zip_path = os.path.join('/tmp', temp_dir, f"{username}_wallpapers.zip")
             if os.path.exists(zip_path):
+                def remove_file_after_send():
+                    try:
+                        # Schedule cleanup after file is sent
+                        import threading
+                        def cleanup():
+                            import time
+                            time.sleep(30)  # Wait 30 seconds before cleanup
+                            try:
+                                if os.path.exists(zip_path):
+                                    os.remove(zip_path)
+                                if os.path.exists(os.path.dirname(zip_path)):
+                                    shutil.rmtree(os.path.dirname(zip_path))
+                            except:
+                                pass
+                        threading.Thread(target=cleanup, daemon=True).start()
+                    except:
+                        pass
+                
+                remove_file_after_send()
                 return send_file(zip_path, as_attachment=True, download_name=f"{username}_wallpapers.zip")
         
-        return jsonify({'error': 'Wallpapers not found'}), 404
+        return jsonify({'error': 'Wallpapers not found or expired'}), 404
     except Exception as e:
+        logger.error(f"Error downloading wallpapers: {str(e)}")
         return jsonify({'error': f'Error downloading wallpapers: {str(e)}'}), 500
 
 if __name__ == '__main__':

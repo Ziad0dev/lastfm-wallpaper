@@ -1,1 +1,1 @@
-web: gunicorn lastfm_wallpaper:app --bind 0.0.0.0:$PORT --workers 2 --timeout 300 
+web: gunicorn --bind 0.0.0.0:$PORT --timeout 300 --workers 1 --max-requests 100 --max-requests-jitter 10 app:app 
