@@ -35,7 +35,6 @@ A dark, occult-themed web application that transforms your Last.fm listening his
    
    # Flask Configuration
    FLASK_ENV=production
-   PORT=5000
    ```
 
 ### 3. Local Development
