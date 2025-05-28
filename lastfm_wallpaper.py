@@ -3,6 +3,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 import numpy as np
 from flask import Flask, render_template, request, jsonify, send_file
+from flask_cors import CORS
 from dotenv import load_dotenv
 import io
 import zipfile
@@ -23,15 +24,35 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Get port from environment variable for deployment
-PORT = int(os.environ.get('PORT', 5000))
+PORT = int(os.environ.get('PORT', 5001))
 
 # Performance optimization constants
 MAX_WORKERS = min(4, (os.cpu_count() or 1) + 1)  # Limit concurrent downloads
 MEMORY_THRESHOLD = 80  # Stop processing if memory usage exceeds 80%
 MAX_IMAGE_SIZE = (2048, 2048)  # Limit maximum image size to save memory
+
+# Global error handlers
+@app.errorhandler(404)
+def not_found_error(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+@app.errorhandler(405)
+def method_not_allowed_error(error):
+    return jsonify({'error': 'Method not allowed'}), 405
+
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f"Internal server error: {error}")
+    return jsonify({'error': 'Internal server error occurred'}), 500
+
+@app.errorhandler(Exception)
+def handle_exception(error):
+    logger.error(f"Unhandled exception: {error}")
+    return jsonify({'error': f'An unexpected error occurred: {str(error)}'}), 500
 
 class LastFMWallpaperGenerator:
     def __init__(self):
@@ -214,7 +235,7 @@ class LastFMWallpaperGenerator:
             return image
 
     def create_wallpaper_optimized(self, album_cover, album_name, artist_name, wallpaper_size=(1920, 1080)):
-        """Optimized wallpaper creation with minimal processing"""
+        """Create wallpaper with album cover filling the entire screen - NO BORDERS"""
         if not album_cover:
             return None
         
@@ -224,28 +245,11 @@ class LastFMWallpaperGenerator:
             # Minimal enhancement to save processing time
             album_cover = self.enhance_image_minimal(album_cover)
             
-            cover_width, cover_height = album_cover.size
+            # Resize album cover to fill the ENTIRE 1920x1080 screen - NO BORDERS
+            album_cover = album_cover.resize((wallpaper_width, wallpaper_height), Image.Resampling.LANCZOS)
             
-            # Create wallpaper canvas
-            wallpaper = Image.new('RGB', wallpaper_size, color=(0, 0, 0))
-            
-            # Calculate scaling to fit within wallpaper bounds
-            if cover_width > wallpaper_width or cover_height > wallpaper_height:
-                scale_factor = min(wallpaper_width / cover_width, wallpaper_height / cover_height)
-                new_width = int(cover_width * scale_factor)
-                new_height = int(cover_height * scale_factor)
-                
-                # Use faster resampling for better performance
-                album_cover = album_cover.resize((new_width, new_height), Image.Resampling.BILINEAR)
-                cover_width, cover_height = new_width, new_height
-            
-            # Center the album cover
-            x_offset = (wallpaper_width - cover_width) // 2
-            y_offset = (wallpaper_height - cover_height) // 2
-            
-            wallpaper.paste(album_cover, (x_offset, y_offset))
-            
-            return wallpaper
+            # Return the resized album cover as the wallpaper (no black canvas needed)
+            return album_cover
             
         except Exception as e:
             logger.error(f"Error creating wallpaper for {artist_name} - {album_name}: {e}")
@@ -381,91 +385,139 @@ lastfm_generator = None
 def index():
     return render_template('index.html')
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    try:
+        # Test if we can create a generator instance
+        generator = LastFMWallpaperGenerator()
+        return jsonify({
+            'status': 'healthy',
+            'message': 'Server is running and API credentials are configured',
+            'timestamp': time.time()
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({
+            'status': 'unhealthy',
+            'message': f'Server error: {str(e)}',
+            'timestamp': time.time()
+        }), 500
+
 @app.route('/validate', methods=['POST'])
 def validate_user():
     """Validate Last.fm username"""
-    data = request.json
-    username = data.get('username', '').strip()
+    try:
+        # Ensure we have JSON data
+        if not request.is_json:
+            return jsonify({'valid': False, 'message': 'Content-Type must be application/json'}), 400
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'valid': False, 'message': 'No JSON data provided'}), 400
+        
+        username = data.get('username', '').strip()
+        
+        if not username:
+            return jsonify({'valid': False, 'message': 'Username is required'}), 400
+        
+        generator = LastFMWallpaperGenerator()
+        is_valid, message = generator.validate_username(username)
+        
+        return jsonify({
+            'valid': is_valid,
+            'message': message
+        })
     
-    if not username:
-        return jsonify({'valid': False, 'message': 'Username is required'}), 400
-    
-    generator = LastFMWallpaperGenerator()
-    is_valid, message = generator.validate_username(username)
-    
-    return jsonify({
-        'valid': is_valid,
-        'message': message
-    })
+    except Exception as e:
+        logger.error(f"Error in validate_user: {str(e)}")
+        return jsonify({'valid': False, 'message': f'Validation error: {str(e)}'}), 500
 
 @app.route('/generate', methods=['POST'])
 def generate_wallpapers():
     global lastfm_generator
     
-    data = request.json
-    username = data.get('username', '').strip()
-    period = data.get('period', 'overall')
-    limit = int(data.get('limit', 10))
-    
-    if not username:
-        return jsonify({'error': 'Username is required'}), 400
-    
-    # Adjust limit based on available memory
-    available_memory_gb = psutil.virtual_memory().available / (1024**3)
-    if available_memory_gb < 2:  # Less than 2GB available
-        limit = min(limit, 20)
-        logger.warning(f"Limited to 20 wallpapers due to low memory")
-    elif limit > 50:
-        limit = 50
-        logger.warning(f"Limited to 50 wallpapers for performance")
-    
     try:
-        lastfm_generator = LastFMWallpaperGenerator()
+        # Ensure we have JSON data
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
         
-        # Validate username first
-        is_valid, validation_message = lastfm_generator.validate_username(username)
-        if not is_valid:
-            return jsonify({'error': validation_message}), 400
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
         
-        # Force garbage collection before starting
-        gc.collect()
+        username = data.get('username', '').strip()
+        period = data.get('period', 'overall')
         
-        saved_files, temp_dir = lastfm_generator.generate_wallpapers_to_disk(username, period, limit)
-        
-        if not saved_files:
-            return jsonify({'error': 'No wallpapers could be generated. The user might not have enough album data.'}), 400
-        
-        # Create zip file with optimal compression for PNGs
-        zip_path = os.path.join(temp_dir, f"{username}_wallpapers.zip")
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zipf:
-            for saved_file in saved_files:
-                zipf.write(saved_file['filepath'], saved_file['filename'])
-                # Remove individual files after adding to zip
-                try:
-                    os.remove(saved_file['filepath'])
-                except:
-                    pass
-        
-        # Force garbage collection after processing
-        gc.collect()
-        
-        return jsonify({
-            'success': True,
-            'count': len(saved_files),
-            'download_url': f'/download/{username}',
-            'validation_message': validation_message
-        })
-        
-    except Exception as e:
-        logger.error(f"Error generating wallpapers: {str(e)}")
-        # Clean up any temporary files on error
+        # Safely convert limit to int
         try:
-            if 'temp_dir' in locals() and temp_dir and os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-        except:
-            pass
-        gc.collect()
-        return jsonify({'error': f'Error generating wallpapers: {str(e)}'}), 500
+            limit = int(data.get('limit', 10))
+        except (ValueError, TypeError):
+            limit = 10
+        
+        if not username:
+            return jsonify({'error': 'Username is required'}), 400
+        
+        # Adjust limit based on available memory
+        available_memory_gb = psutil.virtual_memory().available / (1024**3)
+        if available_memory_gb < 2:  # Less than 2GB available
+            limit = min(limit, 20)
+            logger.warning(f"Limited to 20 wallpapers due to low memory")
+        elif limit > 50:
+            limit = 50
+            logger.warning(f"Limited to 50 wallpapers for performance")
+        
+        try:
+            lastfm_generator = LastFMWallpaperGenerator()
+            
+            # Validate username first
+            is_valid, validation_message = lastfm_generator.validate_username(username)
+            if not is_valid:
+                return jsonify({'error': validation_message}), 400
+            
+            # Force garbage collection before starting
+            gc.collect()
+            
+            saved_files, temp_dir = lastfm_generator.generate_wallpapers_to_disk(username, period, limit)
+            
+            if not saved_files:
+                return jsonify({'error': 'No wallpapers could be generated. The user might not have enough album data.'}), 400
+            
+            # Create zip file with optimal compression for PNGs
+            zip_path = os.path.join(temp_dir, f"{username}_wallpapers.zip")
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zipf:
+                for saved_file in saved_files:
+                    zipf.write(saved_file['filepath'], saved_file['filename'])
+                    # Remove individual files after adding to zip
+                    try:
+                        os.remove(saved_file['filepath'])
+                    except:
+                        pass
+            
+            # Force garbage collection after processing
+            gc.collect()
+            
+            return jsonify({
+                'success': True,
+                'count': len(saved_files),
+                'download_url': f'/download/{username}',
+                'validation_message': validation_message
+            })
+            
+        except Exception as e:
+            logger.error(f"Error generating wallpapers: {str(e)}")
+            # Clean up any temporary files on error
+            try:
+                if 'temp_dir' in locals() and temp_dir and os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+            except:
+                pass
+            gc.collect()
+            return jsonify({'error': f'Error generating wallpapers: {str(e)}'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error in generate_wallpapers: {str(e)}")
+        return jsonify({'error': f'Request processing error: {str(e)}'}), 500
 
 def cleanup_old_temp_files():
     """Clean up old temporary files to prevent disk space issues"""
