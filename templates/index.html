@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⸸ Last.fm Wallpaper Generator ⸸</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0a0a;
+            background-image: 
+                radial-gradient(circle at 20% 80%, rgba(40, 0, 0, 0.2) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(20, 0, 20, 0.2) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(30, 0, 0, 0.1) 0%, transparent 50%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: #e0e0e0;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="50" font-size="12" fill="%23220000" opacity="0.05">⸸ ☾ ⸸ ☾</text></svg>') repeat;
+            pointer-events: none;
+            z-index: -1;
+            animation: float 30s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-10px) rotate(0.5deg); }
+        }
+
+        @keyframes subtleGlow {
+            0%, 100% { text-shadow: 0 0 5px rgba(200, 50, 50, 0.3); }
+            50% { text-shadow: 0 0 8px rgba(200, 50, 50, 0.5); }
+        }
+
+        .container {
+            background: linear-gradient(135deg, rgba(15, 15, 15, 0.95) 0%, rgba(25, 10, 10, 0.95) 100%);
+            backdrop-filter: blur(10px);
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 
+                0 0 20px rgba(200, 50, 50, 0.1),
+                inset 0 0 20px rgba(0, 0, 0, 0.5);
+            max-width: 600px;
+            width: 100%;
+            position: relative;
+        }
+
+        .container::before {
+            content: '⸸';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 20px;
+            color: #666;
+            background: #0a0a0a;
+            padding: 0 8px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            position: relative;
+        }
+
+        .header h1 {
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            color: #f0f0f0;
+            font-size: 2em;
+            margin-bottom: 10px;
+            animation: subtleGlow 4s ease-in-out infinite;
+            letter-spacing: 1px;
+        }
+
+        .header p {
+            color: #b0b0b0;
+            font-size: 1.1em;
+            font-weight: 300;
+        }
+
+        .symbols {
+            text-align: center;
+            font-size: 16px;
+            color: #444;
+            margin: 20px 0;
+            letter-spacing: 15px;
+            animation: float 6s ease-in-out infinite;
+            opacity: 0.6;
+        }
+
+        .info-box {
+            background: linear-gradient(135deg, rgba(20, 10, 10, 0.6) 0%, rgba(10, 10, 10, 0.8) 100%);
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 25px;
+            color: #c0c0c0;
+        }
+
+        .info-box h3 {
+            margin-bottom: 15px;
+            color: #e0e0e0;
+            font-weight: 500;
+            font-size: 1.1em;
+        }
+
+        .info-box p {
+            margin-bottom: 8px;
+            line-height: 1.5;
+            font-weight: 300;
+        }
+
+        .info-box em {
+            color: #d0d0d0;
+            font-style: italic;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+            position: relative;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #d0d0d0;
+            font-weight: 500;
+            font-size: 0.95em;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid #444;
+            border-radius: 6px;
+            font-size: 15px;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, rgba(20, 20, 20, 0.9) 0%, rgba(30, 20, 20, 0.9) 100%);
+            color: #e0e0e0;
+            font-family: 'Inter', sans-serif;
+            font-weight: 400;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+        }
+
+        select {
+            background-image: url('data:image/svg+xml;charset=US-ASCII,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 5"><path fill="%23888" d="M2 0L0 2h4zm0 5L0 3h4z"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            background-size: 12px;
+            padding-right: 40px;
+            cursor: pointer;
+        }
+
+        select option {
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 10px;
+            border: none;
+            font-family: 'Inter', sans-serif;
+        }
+
+        select option:hover {
+            background: #2a1a1a;
+            color: #f0f0f0;
+        }
+
+        select option:checked {
+            background: linear-gradient(135deg, #3a2a2a 0%, #2a1a1a 100%);
+            color: #ff6666;
+            font-weight: 500;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #666;
+            box-shadow: 0 0 0 2px rgba(200, 50, 50, 0.2);
+            background: linear-gradient(135deg, rgba(25, 25, 25, 0.9) 0%, rgba(35, 25, 25, 0.9) 100%);
+        }
+
+        select:focus {
+            box-shadow: 0 0 0 2px rgba(200, 50, 50, 0.3), 0 0 10px rgba(200, 50, 50, 0.1);
+        }
+
+        input::placeholder {
+            color: #888;
+            font-style: italic;
+            font-weight: 300;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 15px;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+        }
+
+        .generate-btn {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, #333 0%, #222 50%, #333 100%);
+            color: #e0e0e0;
+            border: 1px solid #555;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+            font-family: 'Inter', sans-serif;
+            position: relative;
+        }
+
+        .generate-btn:hover {
+            background: linear-gradient(135deg, #444 0%, #333 50%, #444 100%);
+            border-color: #666;
+            box-shadow: 0 0 15px rgba(200, 50, 50, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .generate-btn:disabled {
+            background: #222;
+            color: #666;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+            color: #c0c0c0;
+        }
+
+        .spinner {
+            border: 3px solid #333;
+            border-top: 3px solid #666;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading p {
+            font-style: italic;
+            font-weight: 300;
+        }
+
+        .result {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid;
+        }
+
+        .result.success {
+            background: linear-gradient(135deg, rgba(0, 30, 0, 0.6) 0%, rgba(0, 0, 0, 0.8) 100%);
+            border-color: #4a5d4a;
+            color: #a0d0a0;
+        }
+
+        .result.error {
+            background: linear-gradient(135deg, rgba(40, 10, 10, 0.6) 0%, rgba(0, 0, 0, 0.8) 100%);
+            border-color: #664444;
+            color: #d0a0a0;
+        }
+
+        .result h3 {
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+
+        .download-btn {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #2a4a2a 0%, #1a3a1a 50%, #2a4a2a 100%);
+            color: #a0d0a0;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            border: 1px solid #4a5d4a;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .download-btn:hover {
+            background: linear-gradient(135deg, #3a5a3a 0%, #2a4a2a 50%, #3a5a3a 100%);
+            box-shadow: 0 0 10px rgba(160, 208, 160, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .accent {
+            position: absolute;
+            color: #333;
+            font-size: 14px;
+            animation: float 8s ease-in-out infinite;
+            opacity: 0.4;
+        }
+
+        .accent:nth-child(1) { top: 15%; left: 10%; animation-delay: 0s; }
+        .accent:nth-child(2) { top: 25%; right: 15%; animation-delay: 2s; }
+        .accent:nth-child(3) { bottom: 35%; left: 20%; animation-delay: 4s; }
+        .accent:nth-child(4) { bottom: 20%; right: 10%; animation-delay: 6s; }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 25px;
+                margin: 10px;
+            }
+
+            .header h1 {
+                font-size: 1.6em;
+            }
+
+            .form-row {
+                flex-direction: column;
+                gap: 0;
+            }
+
+            .symbols {
+                letter-spacing: 8px;
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="accent">⸸</div>
+    <div class="accent">☾</div>
+    <div class="accent">⸸</div>
+    <div class="accent">☾</div>
+
+    <div class="container">
+        <div class="header">
+            <h1>Last.fm Wallpaper Generator</h1>
+            <p>Transform your favorite albums into stunning desktop wallpapers</p>
+        </div>
+
+        <div class="symbols">⸸ ☾ ⸸ ☾</div>
+
+        <div class="info-box">
+            <h3>🎵 How to use</h3>
+            <p>1. Enter your Last.fm username below</p>
+            <p>2. Choose your time period and number of albums</p>
+            <p>3. Generate your wallpapers and download the collection</p>
+            <p><em>No API key needed - we've got you covered</em></p>
+        </div>
+
+        <form id="wallpaperForm">
+            <div class="form-group">
+                <label for="username">Last.fm Username</label>
+                <input type="text" id="username" name="username" required placeholder="Enter your Last.fm username">
+                <div id="usernameValidation" style="margin-top: 8px; font-size: 14px; display: none;"></div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="period">Time Period</label>
+                    <select id="period" name="period">
+                        <option value="overall">All Time</option>
+                        <option value="12month">Last 12 Months</option>
+                        <option value="6month">Last 6 Months</option>
+                        <option value="3month">Last 3 Months</option>
+                        <option value="1month">Last Month</option>
+                        <option value="7day">Last Week</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="limit">Number of Albums</label>
+                    <select id="limit" name="limit">
+                        <option value="5">5 Albums</option>
+                        <option value="10" selected>10 Albums</option>
+                        <option value="15">15 Albums</option>
+                        <option value="20">20 Albums</option>
+                        <option value="25">25 Albums</option>
+                        <option value="50">50 Albums</option>
+                        <option value="100">100 Albums</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" class="generate-btn" id="generateBtn">
+                Generate Wallpapers
+            </button>
+        </form>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Creating your wallpapers... This may take a few minutes.</p>
+        </div>
+
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        let validationTimeout;
+        let isUsernameValid = false;
+
+        // Real-time username validation
+        document.getElementById('username').addEventListener('input', function(e) {
+            const username = e.target.value.trim();
+            const validationDiv = document.getElementById('usernameValidation');
+            
+            // Clear previous timeout
+            clearTimeout(validationTimeout);
+            
+            if (username.length < 2) {
+                validationDiv.style.display = 'none';
+                isUsernameValid = false;
+                return;
+            }
+            
+            // Show loading state
+            validationDiv.style.display = 'block';
+            validationDiv.style.color = '#888';
+            validationDiv.textContent = 'Checking username...';
+            
+            // Debounce validation
+            validationTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch('/validate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ username: username })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.valid) {
+                        validationDiv.style.color = '#a0d0a0';
+                        validationDiv.textContent = `✓ ${data.message}`;
+                        isUsernameValid = true;
+                    } else {
+                        validationDiv.style.color = '#d0a0a0';
+                        validationDiv.textContent = `⚠ ${data.message}`;
+                        isUsernameValid = false;
+                    }
+                } catch (error) {
+                    validationDiv.style.color = '#d0a0a0';
+                    validationDiv.textContent = '⚠ Could not validate username';
+                    isUsernameValid = false;
+                }
+            }, 1000);
+        });
+
+        document.getElementById('wallpaperForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            
+            // Remove any empty fields
+            Object.keys(data).forEach(key => {
+                if (!data[key]) delete data[key];
+            });
+            
+            const generateBtn = document.getElementById('generateBtn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            
+            // Show loading state
+            generateBtn.disabled = true;
+            generateBtn.textContent = 'Processing...';
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const responseData = await response.json();
+                
+                if (response.ok && responseData.success) {
+                    result.className = 'result success';
+                    result.innerHTML = `
+                        <h3>✓ Ritual Complete!</h3>
+                        <p>Generated ${responseData.count} dark wallpapers successfully!</p>
+                        <p style="font-size: 12px; opacity: 0.8; margin-top: 10px;">${responseData.validation_message || ''}</p>
+                        <a href="${responseData.download_url}" class="download-btn">⸸ Claim Your Dark Treasures ⸸</a>
+                    `;
+                } else {
+                    result.className = 'result error';
+                    result.innerHTML = `
+                        <h3>⚠ Ritual Failed</h3>
+                        <p>${responseData.error || 'An error occurred while generating wallpapers.'}</p>
+                    `;
+                }
+            } catch (error) {
+                result.className = 'result error';
+                result.innerHTML = `
+                    <h3>⚠ Network Error</h3>
+                    <p>Could not connect to the server: ${error.message}</p>
+                `;
+            } finally {
+                // Hide loading state
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Generate Wallpapers';
+                loading.style.display = 'none';
+                result.style.display = 'block';
+            }
+        });
+
+        // Subtle parallax effect for accent symbols
+        document.addEventListener('mousemove', function(e) {
+            const accents = document.querySelectorAll('.accent');
+            accents.forEach((accent, index) => {
+                const speed = (index + 1) * 0.005;
+                const x = e.clientX * speed;
+                const y = e.clientY * speed;
+                accent.style.transform = `translate(${x}px, ${y}px)`;
+            });
+        });
+    </script>
+</body>
+</html> 
