@@ -31,9 +31,9 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 PORT = int(os.environ.get('PORT', 5001))
 
 # Performance optimization constants
-MAX_WORKERS = min(4, (os.cpu_count() or 1) + 1)  # Limit concurrent downloads
-MEMORY_THRESHOLD = 80  # Stop processing if memory usage exceeds 80%
-MAX_IMAGE_SIZE = (2048, 2048)  # Limit maximum image size to save memory
+MAX_WORKERS = min(2, (os.cpu_count() or 1))  # Reduce concurrent downloads for better memory management
+MEMORY_THRESHOLD = 70  # Lower threshold to prevent memory issues
+MAX_IMAGE_SIZE = (1920, 1080)  # Reduce maximum image size to save memory
 
 # Global error handlers
 @app.errorhandler(404)
@@ -68,11 +68,24 @@ class LastFMWallpaperGenerator:
     def check_memory_usage(self):
         """Check current memory usage and return True if it's safe to continue"""
         try:
+            # Force garbage collection before checking
+            gc.collect()
+            
             memory_percent = psutil.virtual_memory().percent
             if memory_percent > MEMORY_THRESHOLD:
                 logger.warning(f"Memory usage high: {memory_percent}%")
-                gc.collect()  # Force garbage collection
-                return False
+                
+                # Try more aggressive cleanup
+                gc.collect()
+                
+                # Check again after cleanup
+                memory_percent = psutil.virtual_memory().percent
+                if memory_percent > MEMORY_THRESHOLD:
+                    logger.warning(f"Memory still high after cleanup: {memory_percent}%")
+                    return False
+                else:
+                    logger.info(f"Memory reduced to {memory_percent}% after cleanup")
+            
             return True
         except:
             return True  # If psutil fails, assume it's safe to continue
@@ -306,7 +319,7 @@ class LastFMWallpaperGenerator:
             return None
 
     def generate_wallpapers_to_disk(self, username, period="overall", limit=10, temp_dir=None):
-        """Generate wallpapers with parallel processing and memory optimization"""
+        """Generate wallpapers with memory-aware processing"""
         albums = self.get_user_top_albums(username, period, limit)
         if not albums:
             return [], None
@@ -314,12 +327,44 @@ class LastFMWallpaperGenerator:
         if not temp_dir:
             temp_dir = tempfile.mkdtemp()
         
-        # Limit concurrent processing based on available memory
+        # Check available memory and decide processing strategy
         available_memory_gb = psutil.virtual_memory().available / (1024**3)
-        max_workers = min(MAX_WORKERS, max(1, int(available_memory_gb)))
+        memory_percent = psutil.virtual_memory().percent
         
-        logger.info(f"Processing {len(albums)} albums with {max_workers} workers")
+        # Use sequential processing if memory is constrained
+        if memory_percent > 60 or available_memory_gb < 1.5:
+            logger.info(f"Memory constrained ({memory_percent}%), using sequential processing for {len(albums)} albums")
+            return self._process_albums_sequential(albums, temp_dir)
+        else:
+            # Use parallel processing with limited workers
+            max_workers = min(MAX_WORKERS, max(1, int(available_memory_gb)))
+            logger.info(f"Processing {len(albums)} albums with {max_workers} workers")
+            return self._process_albums_parallel(albums, temp_dir, max_workers)
+    
+    def _process_albums_sequential(self, albums, temp_dir):
+        """Process albums one by one to minimize memory usage"""
+        saved_files = []
         
+        for i, album in enumerate(albums):
+            # Force garbage collection before each album
+            gc.collect()
+            
+            # Check memory before processing each album
+            if not self.check_memory_usage():
+                logger.warning(f"Stopping processing due to memory constraints after {i} albums")
+                break
+            
+            result = self.process_single_album(album, temp_dir, i, len(albums))
+            if result:
+                saved_files.append(result)
+            
+            # Force cleanup after each album
+            gc.collect()
+        
+        return saved_files, temp_dir
+    
+    def _process_albums_parallel(self, albums, temp_dir, max_workers):
+        """Process albums in parallel with memory monitoring"""
         saved_files = []
         
         # Process albums in parallel with limited workers
@@ -458,14 +503,23 @@ def generate_wallpapers():
         if not username:
             return jsonify({'error': 'Username is required'}), 400
         
-        # Adjust limit based on available memory
+        # Adjust limit based on available memory - be more conservative
         available_memory_gb = psutil.virtual_memory().available / (1024**3)
-        if available_memory_gb < 2:  # Less than 2GB available
-            limit = min(limit, 20)
-            logger.warning(f"Limited to 20 wallpapers due to low memory")
-        elif limit > 50:
-            limit = 50
-            logger.warning(f"Limited to 50 wallpapers for performance")
+        memory_percent = psutil.virtual_memory().percent
+        
+        # More aggressive memory-based limits
+        if memory_percent > 70 or available_memory_gb < 1:
+            limit = min(limit, 5)
+            logger.warning(f"Limited to 5 wallpapers due to high memory usage ({memory_percent}%)")
+        elif memory_percent > 60 or available_memory_gb < 1.5:
+            limit = min(limit, 10)
+            logger.warning(f"Limited to 10 wallpapers due to memory constraints ({memory_percent}%)")
+        elif available_memory_gb < 2:
+            limit = min(limit, 15)
+            logger.warning(f"Limited to 15 wallpapers due to low memory")
+        elif limit > 25:
+            limit = 25
+            logger.warning(f"Limited to 25 wallpapers for performance")
         
         try:
             lastfm_generator = LastFMWallpaperGenerator()
