@@ -96,60 +96,140 @@ class LastFMWallpaperGenerator:
             return []
     
     def download_image(self, url):
-        """Download image from URL with better quality handling and memory optimization"""
+        """Download image from URL with enhanced quality handling and multiple resolution attempts"""
         try:
-            # Try to get higher resolution by modifying the URL
-            high_res_url = url.replace('/300x300/', '/500x500/').replace('300x300', '500x500')
-            if high_res_url == url:
-                # Try other common size patterns
-                high_res_url = url.replace('174s', '500x500').replace('64s', '500x500')
+            # Try multiple high-resolution URL patterns
+            high_res_urls = []
             
-            # Try high resolution first
-            try:
-                response = requests.get(high_res_url, timeout=15, stream=True)
-                response.raise_for_status()
-                
-                # Load image directly from stream to save memory
-                image_data = io.BytesIO()
-                for chunk in response.iter_content(chunk_size=8192):
-                    image_data.write(chunk)
-                image_data.seek(0)
-                
-                image = Image.open(image_data)
-                # Convert to RGB immediately to avoid issues later
-                if image.mode != 'RGB':
-                    image = image.convert('RGB')
+            # Pattern 1: Replace size indicators with larger ones
+            high_res_urls.append(url.replace('/300x300/', '/1200x1200/').replace('300x300', '1200x1200'))
+            high_res_urls.append(url.replace('/300x300/', '/800x800/').replace('300x300', '800x800'))
+            high_res_urls.append(url.replace('/300x300/', '/500x500/').replace('300x300', '500x500'))
+            
+            # Pattern 2: Replace small size indicators
+            high_res_urls.append(url.replace('174s', '1200x1200').replace('64s', '1200x1200'))
+            high_res_urls.append(url.replace('174s', '800x800').replace('64s', '800x800'))
+            high_res_urls.append(url.replace('174s', '500x500').replace('64s', '500x500'))
+            
+            # Pattern 3: Try removing size parameters entirely (sometimes gives original size)
+            if '?' in url:
+                base_url = url.split('?')[0]
+                high_res_urls.append(base_url)
+            
+            # Pattern 4: Try common Last.fm size patterns
+            if 'lastfm' in url:
+                high_res_urls.append(url.replace('/i/u/300x300/', '/i/u/ar0/').replace('/i/u/174s/', '/i/u/ar0/'))
+                high_res_urls.append(url.replace('/i/u/300x300/', '/i/u/770x0/').replace('/i/u/174s/', '/i/u/770x0/'))
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_urls = []
+            for url_attempt in high_res_urls:
+                if url_attempt not in seen and url_attempt != url:
+                    seen.add(url_attempt)
+                    unique_urls.append(url_attempt)
+            
+            # Add original URL as fallback
+            unique_urls.append(url)
+            
+            # Try each URL in order of preference
+            for attempt_url in unique_urls:
+                try:
+                    response = requests.get(attempt_url, timeout=15, stream=True)
+                    response.raise_for_status()
                     
-                logger.info(f"Downloaded high-res image: {image.size}")
-                return image
-            except:
-                # Fall back to original URL
-                response = requests.get(url, timeout=15, stream=True)
-                response.raise_for_status()
-                
-                image_data = io.BytesIO()
-                for chunk in response.iter_content(chunk_size=8192):
-                    image_data.write(chunk)
-                image_data.seek(0)
-                
-                image = Image.open(image_data)
-                if image.mode != 'RGB':
-                    image = image.convert('RGB')
+                    # Load image directly from stream to save memory
+                    image_data = io.BytesIO()
+                    for chunk in response.iter_content(chunk_size=8192):
+                        image_data.write(chunk)
+                    image_data.seek(0)
                     
-                logger.info(f"Downloaded standard image: {image.size}")
-                return image
+                    image = Image.open(image_data)
+                    
+                    # Convert to RGB immediately to avoid issues later
+                    if image.mode != 'RGB':
+                        image = image.convert('RGB')
+                    
+                    # Log successful download with size info
+                    if attempt_url != url:
+                        logger.info(f"Downloaded enhanced image: {image.size} from high-res URL")
+                    else:
+                        logger.info(f"Downloaded standard image: {image.size}")
+                    
+                    return image
+                    
+                except Exception as e:
+                    # Log failed attempts for debugging
+                    if attempt_url != url:
+                        logger.debug(f"Failed to download from {attempt_url}: {e}")
+                    continue
+            
+            # If all attempts failed
+            logger.error(f"All download attempts failed for image URLs")
+            return None
                 
         except Exception as e:
-            logger.error(f"Error downloading image from {url}: {e}")
+            logger.error(f"Error in download_image: {e}")
             return None
     
+    def enhance_image_quality(self, image):
+        """Apply various enhancement techniques to improve image quality"""
+        try:
+            # Apply unsharp mask for better sharpness
+            enhancer = ImageEnhance.Sharpness(image)
+            image = enhancer.enhance(1.2)  # Increase sharpness by 20%
+            
+            # Enhance contrast slightly
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(1.1)  # Increase contrast by 10%
+            
+            # Enhance color saturation slightly
+            enhancer = ImageEnhance.Color(image)
+            image = enhancer.enhance(1.05)  # Increase saturation by 5%
+            
+            return image
+        except Exception as e:
+            logger.warning(f"Failed to enhance image quality: {e}")
+            return image
+    
+    def smart_upscale_image(self, image, target_size):
+        """Intelligently upscale small images using high-quality resampling"""
+        current_width, current_height = image.size
+        target_width, target_height = target_size
+        
+        # If image is significantly smaller than target, upscale it
+        if current_width < target_width * 0.7 or current_height < target_height * 0.7:
+            # Calculate upscale factor
+            scale_factor = min(target_width / current_width, target_height / current_height)
+            
+            # Limit upscaling to avoid too much quality loss
+            if scale_factor > 3.0:
+                scale_factor = 3.0
+            
+            new_width = int(current_width * scale_factor)
+            new_height = int(current_height * scale_factor)
+            
+            # Use LANCZOS for high-quality upscaling
+            upscaled = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            logger.info(f"Upscaled image from {image.size} to {upscaled.size}")
+            return upscaled
+        
+        return image
+
     def create_wallpaper(self, album_cover, album_name, artist_name, wallpaper_size=(1920, 1080)):
-        """Create a wallpaper from album cover using letterboxing to preserve quality"""
+        """Create a wallpaper from album cover using letterboxing and quality enhancement"""
         if not album_cover:
             return None
         
         try:
             wallpaper_width, wallpaper_height = wallpaper_size
+            
+            # Enhance image quality first
+            album_cover = self.enhance_image_quality(album_cover)
+            
+            # Smart upscaling for small images
+            album_cover = self.smart_upscale_image(album_cover, wallpaper_size)
+            
             cover_width, cover_height = album_cover.size
             
             # Create a new wallpaper canvas with black background
@@ -196,18 +276,8 @@ class LastFMWallpaperGenerator:
                 album_name = album['name']
                 artist_name = album['artist']['name']
                 
-                # Get the highest quality image available
-                image_url = None
-                # Try to get the best quality image available, prioritizing larger sizes
-                size_priority = ['mega', 'extralarge', 'large', 'medium', 'small']
-                for size in size_priority:
-                    for image in album['image']:
-                        if image['size'] == size and image['#text']:
-                            image_url = image['#text']
-                            logger.info(f"Found {size} image for {album_name} by {artist_name}")
-                            break
-                    if image_url:
-                        break
+                # Get the highest quality image available using enhanced method
+                image_url = self.get_best_album_image(album)
                 
                 if not image_url:
                     logger.warning(f"No image found for {album_name} by {artist_name}")
@@ -227,8 +297,8 @@ class LastFMWallpaperGenerator:
                     filename = f"{artist_name} - {album_name}".replace('/', '_').replace('\\', '_')[:100] + '.jpg'
                     filepath = os.path.join(temp_dir, filename)
                     
-                    # Save with optimized settings
-                    wallpaper.save(filepath, 'JPEG', quality=85, optimize=True)
+                    # Save with enhanced quality settings
+                    wallpaper.save(filepath, 'JPEG', quality=95, optimize=True, progressive=True)
                     saved_files.append({
                         'filename': filename,
                         'filepath': filepath
@@ -244,6 +314,41 @@ class LastFMWallpaperGenerator:
                 continue
         
         return saved_files, temp_dir
+
+    def get_best_album_image(self, album_data):
+        """Get the best quality image URL from album data with enhanced prioritization"""
+        image_url = None
+        best_size = 0
+        
+        # Enhanced size priority with more options
+        size_priority = ['mega', 'extralarge', 'large', 'medium', 'small']
+        size_values = {
+            'mega': 1200,
+            'extralarge': 600, 
+            'large': 300,
+            'medium': 174,
+            'small': 64
+        }
+        
+        # First pass: try to get the largest available size
+        for size in size_priority:
+            for image in album_data.get('image', []):
+                if image.get('size') == size and image.get('#text'):
+                    current_size = size_values.get(size, 0)
+                    if current_size > best_size:
+                        image_url = image['#text']
+                        best_size = current_size
+                        logger.info(f"Found {size} image ({current_size}px) for {album_data.get('name', 'Unknown')}")
+        
+        # If no good image found, try any available image
+        if not image_url:
+            for image in album_data.get('image', []):
+                if image.get('#text'):
+                    image_url = image['#text']
+                    logger.warning(f"Using fallback image for {album_data.get('name', 'Unknown')}")
+                    break
+        
+        return image_url
 
 # Initialize the generator
 lastfm_generator = None
