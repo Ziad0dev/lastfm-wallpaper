@@ -1,7 +1,7 @@
 {
   "name": "Last.fm Wallpaper Generator",
   "description": "A dark, occult-themed web application that transforms your Last.fm listening history into stunning desktop wallpapers.",
-  "repository": "https://github.com/your-username/lastfm-wallpaper-app",
+  "repository": "https://github.com/Ziad0dev/lastfm-wallpaper-secure",
   "logo": "https://img.shields.io/badge/⸸-Last.fm%20Wallpaper-darkred",
   "keywords": ["flask", "lastfm", "wallpaper", "python", "music"],
   "image": "heroku/python",
@@ -19,12 +19,16 @@
   },
   "env": {
     "LASTFM_API_KEY": {
-      "description": "Last.fm API Key (optional - app has built-in keys)",
-      "required": false
+      "description": "Last.fm API Key - Get from https://www.last.fm/api/account/create",
+      "required": true
     },
     "LASTFM_SHARED_SECRET": {
-      "description": "Last.fm Shared Secret (optional - app has built-in keys)",
-      "required": false
+      "description": "Last.fm Shared Secret - Get from https://www.last.fm/api/account/create",
+      "required": true
+    },
+    "FLASK_ENV": {
+      "description": "Flask environment",
+      "value": "production"
     }
   },
   "addons": [],

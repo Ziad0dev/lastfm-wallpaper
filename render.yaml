@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: lastfm-wallpaper-generator
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn lastfm_wallpaper:app --bind 0.0.0.0:$PORT --workers 2 --timeout 300
+    envVars:
+      - key: LASTFM_API_KEY
+        sync: false
+      - key: LASTFM_SHARED_SECRET
+        sync: false
+      - key: FLASK_ENV
+        value: production
+    healthCheckPath: / 
