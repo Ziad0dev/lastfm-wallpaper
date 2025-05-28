@@ -7,9 +7,8 @@ A dark, occult-themed web application that transforms your Last.fm listening his
 - **Real-time Username Validation**: Instant feedback on Last.fm username validity
 - **High-Quality Wallpapers**: Letterboxing approach preserves image quality without scaling artifacts
 - **Batch Generation**: Create up to 100 wallpapers at once
-- **Dark Occult Theme**: Black metal aesthetic with occult symbols and animations
 - **ZIP Download**: Get all your wallpapers in a convenient ZIP file
-- **Production Ready**: Configured for deployment on free hosting platforms
+- **Production Ready**: Configured for deployment on hosting platforms
 
 ## ⸸ Setup Instructions ⸸
 
@@ -87,9 +86,7 @@ git push heroku master
 
 - **Backend**: Flask with PIL/Pillow for image processing
 - **Image Quality**: Letterboxing approach preserves original quality
-- **Wallpaper Size**: 1920x1080 (Full HD)
-- **Format**: High-quality JPEG (100% quality)
-- **Security**: Environment variables for API credentials
+- **Wallpaper Size**: 1920x1080
 
 ## ☠ Requirements ☠
 
